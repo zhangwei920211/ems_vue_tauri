@@ -151,42 +151,79 @@ function addPathMatch() {
 
 /** 处理动态路由（后端返回的路由） */
 function handleAsyncRoutes(routeList) {
-  if (routeList.length === 0) {
-    usePermissionStoreHook().handleWholeMenus(routeList);
-  } else {
-    formatFlatteningRoutes(addAsyncRoutes(routeList)).map(
-      (v: RouteRecordRaw) => {
-        // 防止重复添加路由
-        if (
-          router.options.routes[0].children.findIndex(
-            value => value.path === v.path
-          ) !== -1
-        ) {
-          return;
-        } else {
+  if (!Array.isArray(routeList)) {
+    console.warn("routeList must be an array");
+    return;
+  }
+
+  try {
+    if (routeList.length === 0) {
+      usePermissionStoreHook().handleWholeMenus(routeList);
+    } else {
+      const processedRoutes = addAsyncRoutes(routeList);
+      if (!processedRoutes) {
+        console.warn("No valid routes returned from addAsyncRoutes");
+        return;
+      }
+
+      const flattenedRoutes = formatFlatteningRoutes(processedRoutes);
+      if (!Array.isArray(flattenedRoutes)) {
+        console.warn("Invalid flattened routes");
+        return;
+      }
+
+      flattenedRoutes.forEach((v: RouteRecordRaw) => {
+        try {
+          // 防止重复添加路由
+          if (!router.options.routes[0]?.children) {
+            console.warn("No children array in first route");
+            return;
+          }
+
+          if (
+            router.options.routes[0].children.findIndex(
+              value => value.path === v.path
+            ) !== -1
+          ) {
+            return;
+          }
+
           // 切记将路由push到routes后还需要使用addRoute，这样路由才能正常跳转
           router.options.routes[0].children.push(v);
           // 最终路由进行升序
           ascending(router.options.routes[0].children);
-          if (!router.hasRoute(v?.name)) router.addRoute(v);
-          const flattenRouters: any = router
-            .getRoutes()
-            .find(n => n.path === "/");
-          router.addRoute(flattenRouters);
+
+          // 添加路由
+          if (v?.name && !router.hasRoute(v.name)) {
+            router.addRoute(v);
+          }
+
+          // 找到根路由
+          const flattenRouters = router.getRoutes().find(n => n.path === "/");
+          if (flattenRouters) {
+            router.addRoute(flattenRouters);
+          }
+        } catch (error) {
+          console.error("Error processing route:", error, v);
         }
-      }
-    );
-    usePermissionStoreHook().handleWholeMenus(routeList);
+      });
+
+      usePermissionStoreHook().handleWholeMenus(routeList);
+    }
+
+    if (!useMultiTagsStoreHook().getMultiTagsCache) {
+      useMultiTagsStoreHook().handleTags("equal", [
+        ...routerArrays,
+        ...usePermissionStoreHook().flatteningRoutes.filter(
+          v => v?.meta?.fixedTag
+        )
+      ]);
+    }
+
+    addPathMatch();
+  } catch (error) {
+    console.error("Error in handleAsyncRoutes:", error);
   }
-  if (!useMultiTagsStoreHook().getMultiTagsCache) {
-    useMultiTagsStoreHook().handleTags("equal", [
-      ...routerArrays,
-      ...usePermissionStoreHook().flatteningRoutes.filter(
-        v => v?.meta?.fixedTag
-      )
-    ]);
-  }
-  addPathMatch();
 }
 
 /** 初始化路由（`new Promise` 写法防止在异步请求中造成无限循环）*/
@@ -225,16 +262,35 @@ function initRouter() {
  * @returns 返回处理后的一维路由
  */
 function formatFlatteningRoutes(routesList: RouteRecordRaw[]) {
-  if (routesList.length === 0) return routesList;
-  let hierarchyList = buildHierarchyTree(routesList);
-  for (let i = 0; i < hierarchyList.length; i++) {
-    if (hierarchyList[i].children) {
-      hierarchyList = hierarchyList
-        .slice(0, i + 1)
-        .concat(hierarchyList[i].children, hierarchyList.slice(i + 1));
-    }
+  if (!Array.isArray(routesList)) {
+    console.warn("routesList must be an array");
+    return [];
   }
-  return hierarchyList;
+  if (!routesList || routesList.length === 0) return [];
+
+  try {
+    let hierarchyList = buildHierarchyTree(routesList);
+    if (!Array.isArray(hierarchyList)) {
+      console.warn("buildHierarchyTree result must be an array");
+      return routesList;
+    }
+
+    for (let i = 0; i < hierarchyList.length; i++) {
+      if (
+        hierarchyList[i] &&
+        hierarchyList[i].children &&
+        Array.isArray(hierarchyList[i].children)
+      ) {
+        hierarchyList = hierarchyList
+          .slice(0, i + 1)
+          .concat(hierarchyList[i].children, hierarchyList.slice(i + 1));
+      }
+    }
+    return hierarchyList;
+  } catch (error) {
+    console.error("Error in formatFlatteningRoutes:", error);
+    return routesList;
+  }
 }
 
 /**
@@ -300,31 +356,78 @@ function handleAliveRoute({ name }: ToRouteType, mode?: string) {
 
 /** 过滤后端传来的动态路由 重新生成规范路由 */
 function addAsyncRoutes(arrRoutes: Array<RouteRecordRaw>) {
-  if (!arrRoutes || !arrRoutes.length) return;
-  const modulesRoutesKeys = Object.keys(modulesRoutes);
-  arrRoutes.forEach((v: RouteRecordRaw) => {
-    // 将backstage属性加入meta，标识此路由为后端返回路由
-    v.meta.backstage = true;
-    // 父级的redirect属性取值：如果子级存在且父级的redirect属性不存在，默认取第一个子级的path；如果子级存在且父级的redirect属性存在，取存在的redirect属性，会覆盖默认值
-    if (v?.children && v.children.length && !v.redirect)
-      v.redirect = v.children[0].path;
-    // 父级的name属性取值：如果子级存在且父级的name属性不存在，默认取第一个子级的name；如果子级存在且父级的name属性存在，取存在的name属性，会覆盖默认值（注意：测试中发现父级的name不能和子级name重复，如果重复会造成重定向无效（跳转404），所以这里给父级的name起名的时候后面会自动加上`Parent`，避免重复）
-    if (v?.children && v.children.length && !v.name)
-      v.name = (v.children[0].name as string) + "Parent";
-    if (v.meta?.frameSrc) {
-      v.component = IFrame;
-    } else {
-      // 对后端传component组件路径和不传做兼容（如果后端传component组件路径，那么path可以随便写，如果不传，component组件路径会跟path保持一致）
-      const index = v?.component
-        ? modulesRoutesKeys.findIndex(ev => ev.includes(v.component as any))
-        : modulesRoutesKeys.findIndex(ev => ev.includes(v.path));
-      v.component = modulesRoutes[modulesRoutesKeys[index]];
-    }
-    if (v?.children && v.children.length) {
-      addAsyncRoutes(v.children);
-    }
-  });
-  return arrRoutes;
+  if (!Array.isArray(arrRoutes)) {
+    console.warn("arrRoutes must be an array");
+    return [];
+  }
+  if (!arrRoutes || arrRoutes.length === 0) return [];
+
+  try {
+    const modulesRoutesKeys = Object.keys(modulesRoutes);
+    arrRoutes.forEach((v: RouteRecordRaw) => {
+      try {
+        if (!v.meta) v.meta = { title: "" };
+
+        // 将backstage属性加入meta，标识此路由为后端返回路由
+        v.meta.backstage = true;
+
+        // 父级的redirect属性取值
+        if (
+          v?.children &&
+          Array.isArray(v.children) &&
+          v.children.length &&
+          !v.redirect
+        ) {
+          v.redirect = v.children[0].path;
+        }
+
+        // 父级的name属性取值
+        if (
+          v?.children &&
+          Array.isArray(v.children) &&
+          v.children.length &&
+          !v.name
+        ) {
+          v.name = (v.children[0].name as string) + "Parent";
+        }
+
+        // 组件处理
+        if (v.meta?.frameSrc) {
+          v.component = IFrame;
+        } else if (
+          typeof v.component === "string" &&
+          v.component === "Layout"
+        ) {
+          // 特殊处理布局组件
+          v.component = () => import("@/layout/index.vue");
+        } else {
+          // 对后端传component组件路径和不传做兼容
+          const index = v?.component
+            ? modulesRoutesKeys.findIndex(ev => ev.includes(v.component as any))
+            : modulesRoutesKeys.findIndex(ev => ev.includes(v.path));
+
+          if (index !== -1) {
+            v.component = modulesRoutes[modulesRoutesKeys[index]];
+          } else {
+            console.warn(`No matching component found for path: ${v.path}`);
+            // 如果找不到组件，使用一个空组件或者404组件
+            v.component = () => import("@/views/error/404.vue");
+          }
+        }
+
+        // 递归处理子路由
+        if (v?.children && Array.isArray(v.children) && v.children.length) {
+          addAsyncRoutes(v.children);
+        }
+      } catch (error) {
+        console.error("Error processing route:", error, v);
+      }
+    });
+    return arrRoutes;
+  } catch (error) {
+    console.error("Error in addAsyncRoutes:", error);
+    return [];
+  }
 }
 
 /** 获取路由历史模式 https://next.router.vuejs.org/zh/guide/essentials/history-mode.html */

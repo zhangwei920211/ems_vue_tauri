@@ -10,7 +10,14 @@ import { useUserStoreHook } from "@/store/modules/user";
 import { initRouter, getTopMenu } from "@/router/utils";
 import { bg, avatar, illustration } from "./utils/static";
 import { useRenderIcon } from "@/components/ReIcon/src/hooks";
-import { ref, reactive, toRaw, onMounted, onBeforeUnmount } from "vue";
+import {
+  ref,
+  reactive,
+  toRaw,
+  onMounted,
+  onBeforeUnmount,
+  nextTick
+} from "vue";
 import { useDataThemeChange } from "@/layout/hooks/useDataThemeChange";
 
 import dayIcon from "@/assets/svg/day.svg?component";
@@ -39,24 +46,46 @@ const ruleForm = reactive({
 
 const onLogin = async (formEl: FormInstance | undefined) => {
   if (!formEl) return;
-  await formEl.validate((valid, fields) => {
+  await formEl.validate(async (valid, fields) => {
     if (valid) {
       loading.value = true;
-      useUserStoreHook()
-        .loginByUsername({ username: ruleForm.username, password: "admin123" })
-        .then(res => {
-          if (res.success) {
-            // 获取后端路由
-            return initRouter().then(() => {
-              router.push(getTopMenu(true).path).then(() => {
-                message("登录成功", { type: "success" });
-              });
+      try {
+        const res = await useUserStoreHook().loginByUsername({
+          username: ruleForm.username,
+          password: "admin123"
+        });
+
+        if (res.success) {
+          // 获取后端路由
+          await initRouter();
+
+          // 使用 Promise 和 nextTick 确保路由初始化完成
+          await new Promise(resolve => {
+            nextTick(async () => {
+              try {
+                const topMenu = getTopMenu(true);
+                if (topMenu && topMenu.path) {
+                  await router.push(topMenu.path);
+                  message("登录成功", { type: "success" });
+                } else {
+                  throw new Error("未找到有效的路由路径");
+                }
+              } catch (err) {
+                console.error("路由跳转失败:", err);
+                message("登录成功，但路由跳转失败", { type: "warning" });
+              }
+              resolve(null);
             });
-          } else {
-            message("登录失败", { type: "error" });
-          }
-        })
-        .finally(() => (loading.value = false));
+          });
+        } else {
+          message("登录失败", { type: "error" });
+        }
+      } catch (err) {
+        console.error("登录过程发生错误:", err);
+        message("登录失败", { type: "error" });
+      } finally {
+        loading.value = false;
+      }
     }
   });
 };

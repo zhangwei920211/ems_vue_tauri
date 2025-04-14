@@ -43,7 +43,7 @@ const {
       <!-- 菜单搜索 -->
       <LaySearch id="header-search" />
       <!-- 全屏 -->
-      <LaySidebarFullScreen id="full-screen" />
+      <!-- <LaySidebarFullScreen id="full-screen" /> -->
       <!-- 消息通知 -->
       <LayNotice id="header-notice" />
       <!-- 退出登录 -->

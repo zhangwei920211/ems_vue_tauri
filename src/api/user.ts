@@ -1,4 +1,4 @@
-import { http } from "@/utils/http";
+import { invoke } from "@tauri-apps/api/core";
 
 export type UserResult = {
   success: boolean;
@@ -35,11 +35,69 @@ export type RefreshTokenResult = {
 };
 
 /** 登录 */
-export const getLogin = (data?: object) => {
-  return http.request<UserResult>("post", "/login", { data });
+export const getLogin = async (data?: {
+  username: string;
+  password: string;
+}): Promise<UserResult> => {
+  try {
+    const response = await invoke<any>("login", { request: data });
+    if (response.success && response.data) {
+      // 转换后端返回的数据格式以匹配前端期望的格式
+      return {
+        success: true,
+        data: {
+          avatar: response.data.avatar,
+          username: response.data.username,
+          nickname: response.data.nickname,
+          roles: response.data.roles,
+          permissions: response.data.permissions,
+          accessToken: response.data.access_token,
+          refreshToken: response.data.refresh_token,
+          expires: new Date(response.data.expires)
+        }
+      };
+    }
+    return {
+      success: false,
+      data: null
+    };
+  } catch (error) {
+    console.error("登录失败:", error);
+    return {
+      success: false,
+      data: null
+    };
+  }
 };
 
 /** 刷新`token` */
-export const refreshTokenApi = (data?: object) => {
-  return http.request<RefreshTokenResult>("post", "/refresh-token", { data });
+export const refreshTokenApi = async (data?: {
+  refreshToken: string;
+}): Promise<RefreshTokenResult> => {
+  try {
+    const response = await invoke<any>("refresh_token", {
+      request: { refresh_token: data.refreshToken }
+    });
+    if (response.success && response.data) {
+      // 转换后端返回的数据格式以匹配前端期望的格式
+      return {
+        success: true,
+        data: {
+          accessToken: response.data.access_token,
+          refreshToken: response.data.refresh_token,
+          expires: new Date(response.data.expires)
+        }
+      };
+    }
+    return {
+      success: false,
+      data: null
+    };
+  } catch (error) {
+    console.error("刷新token失败:", error);
+    return {
+      success: false,
+      data: null
+    };
+  }
 };
