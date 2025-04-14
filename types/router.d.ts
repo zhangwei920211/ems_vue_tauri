@@ -104,5 +104,6 @@ declare global {
 
 // https://router.vuejs.org/zh/guide/advanced/meta.html#typescript
 declare module "vue-router" {
-  interface RouteMeta extends CustomizeRouteMeta {}
+  // 使用类型别名代替接口扩展
+  type RouteMeta = CustomizeRouteMeta;
 }

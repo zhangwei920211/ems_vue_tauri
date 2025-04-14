@@ -4,6 +4,7 @@ use https::async_routes::get_async_routes;
 use https::refresh_token::refresh_token;
 use https::users::login;
 
+#[allow(dead_code)]
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)

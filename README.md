@@ -1,4 +1,6 @@
-<h1>vue-pure-admin精简版（非国际化版本）</h1>
+<h1>能源管理系统</h1>
+
+修改了 前后端路由问题
 
 [![license](https://img.shields.io/github/license/pure-admin/vue-pure-admin.svg)](LICENSE)
 
